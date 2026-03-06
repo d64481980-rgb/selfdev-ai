@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SelfDev AI</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #0f0f0f;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(15, 15, 15, 0.96);
+      border-bottom: 1px solid #222;
+      padding: 16px 24px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 30px;
+    }
+
+    .subtitle {
+      margin-top: 6px;
+      color: #aaa;
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: #272727;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #353535;
+    }
+
+    main {
+      padding: 24px;
+    }
+
+    .statusbar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .pill {
+      background: #1b1b1b;
+      border: 1px solid #272727;
+      color: #cfcfcf;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      text-decoration: none;
+      color: white;
+      display: block;
+    }
+
+    .thumb-wrap {
+      position: relative;
+      display: block;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #1c1c1c;
+    }
+
+    .thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+      background: #222;
+    }
+
+    .youtube-badge {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      background: rgba(0, 0, 0, 0.82);
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    .card-info {
+      display: flex;
+      gap: 12px;
+      padding-top: 12px;
+    }
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #2a2a2a;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: bold;
+      color: #ddd;
+    }
+
+    .text {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .title {
+      font-size: 16px;
+      font-weight: bold;
+      line-height: 1.35;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    .meta {
+      color: #aaa;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .score {
+      margin-top: 7px;
+      font-size: 13px;
+      color: #7CFC98;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .tag {
+      background: #222;
+      color: #ddd;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+    }
+
+    .loader,
+    .end,
+    .error {
+      text-align: center;
+      color: #aaa;
+      padding: 28px 0;
+      font-size: 15px;
+    }
+
+    .error {
+      color: #ff9a9a;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 1100px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 700px) {
+      header,
+      main {
+        padding: 16px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div class="brand">
+        <h1>SelfDev AI</h1>
+        <div class="subtitle">Русские рекомендации по саморазвитию из YouTube API</div>
+      </div>
+
+      <div class="actions">
+        <button id="refreshBtn">Обновить ленту</button>
+        <button id="loadMoreBtn">Загрузить ещё</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="statusbar">
+      <div class="pill" id="statusPill">Статус: ожидание</div>
+      <div class="pill" id="countPill">Видео: 0</div>
+      <div class="pill" id="queryPill">Запрос: —</div>
+    </div>
+
+    <section id="videoGrid" class="grid"></section>
+    <div id="loader" class="loader hidden">Загружаю видео...</div>
+    <div id="endMessage" class="end hidden">Больше результатов пока нет.</div>
+    <div id="errorMessage" class="error hidden"></div>
+  </main>
+
+  <script>
+    // ВСТАВЬ СЮДА СВОЙ НОВЫЙ API KEY
+    const API_KEY = "AIzaSyB7_hzUZycb_u_D0XeeXKU4SvVMcVVodW8";
+
+    const SEARCH_TERMS = [
+      "саморазвитие",
+      "саморазвитие дисциплина",
+      "саморазвитие привычки",
+      "саморазвитие психология",
+      "как перестать прокрастинировать",
+      "как стать дисциплинированным",
+      "продуктивность и фокус",
+      "тайм-менеджмент саморазвитие",
+      "личностный рост",
+      "русское саморазвитие",
+      "психология личности",
+      "как изменить свою жизнь"
+    ];
+
+    const GOOD_WORDS = [
+      "саморазвит",
+      "дисципл",
+      "продуктив",
+      "привыч",
+      "психолог",
+      "концентрац",
+      "памят",
+      "мышлен",
+      "тайм",
+      "мотивац",
+      "личност",
+      "обучен",
+      "прокраст",
+      "фокус",
+      "цель",
+      "успев"
+    ];
+
+    const BAD_WORDS = [
+      "мем",
+      "прикол",
+      "шортс",
+      "shorts",
+      "стрим",
+      "пранк",
+      "реакц",
+      "игра",
+      "летсплей",
+      "музыка",
+      "клип",
+      "аниме эдит",
+      "тикток"
+    ];
+
+    const pageSize = 12;
+
+    let allVideos = [];
+    let visibleCount = 0;
+    let currentQuery = "";
+    let nextPageToken = "";
+    let loading = false;
+    let seenIds = new Set();
+
+    const videoGrid = document.getElementById("videoGrid");
+    const loader = document.getElementById("loader");
+    const endMessage = document.getElementById("endMessage");
+    const errorMessage = document.getElementById("errorMessage");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const loadMoreBtn = document.getElementById("loadMoreBtn");
+    const statusPill = document.getElementById("statusPill");
+    const countPill = document.getElementById("countPill");
+    const queryPill = document.getElementById("queryPill");
+
+    function shuffle(arr) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function pickRandomQuery() {
+      return SEARCH_TERMS[Math.floor(Math.random() * SEARCH_TERMS.length)];
+    }
+
+    function formatViews(num) {
+      return new Intl.NumberFormat("ru-RU").format(Number(num || 0)) + " просмотров";
+    }
+
+    function getAvatarLetters(channel) {
+      return channel
+        .split(" ")
+        .slice(0, 2)
+        .map(word => word[0] || "")
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+    }
+
+    function thumbUrl(video) {
+      return (
+        video.thumbnails?.maxres?.url ||
+        video.thumbnails?.standard?.url ||
+        video.thumbnails?.high?.url ||
+        video.thumbnails?.medium?.url ||
+        video.thumbnails?.default?.url ||
+        ""
+      );
+    }
+
+    function isRussianText(text) {
+      const match = text.match(/[А-Яа-яЁё]/g);
+      return !!(match && match.length >= 5);
+    }
+
+    function calcAiScore(video) {
+      const text = `${video.title} ${video.description} ${video.channelTitle}`.toLowerCase();
+      let score = 0;
+
+      GOOD_WORDS.forEach(word => {
+        if (text.includes(word)) score += 10;
+      });
+
+      BAD_WORDS.forEach(word => {
+        if (text.includes(word)) score -= 18;
+      });
+
+      if (isRussianText(text)) score += 15;
+
+      const views = Number(video.views || 0);
+      if (views > 100000) score += 8;
+      if (views > 500000) score += 6;
+
+      return score;
+    }
+
+    function buildTags(video) {
+      const text = `${video.title} ${video.description}`.toLowerCase();
+      const tags = [];
+
+      if (text.includes("саморазвит")) tags.push("саморазвитие");
+      if (text.includes("дисцип")) tags.push("дисциплина");
+      if (text.includes("продуктив")) tags.push("продуктивность");
+      if (text.includes("психолог")) tags.push("психология");
+      if (text.includes("привыч")) tags.push("привычки");
+      if (text.includes("фокус")) tags.push("фокус");
+      if (text.includes("памят")) tags.push("память");
+      if (text.includes("тайм")) tags.push("тайм-менеджмент");
+
+      if (!tags.length) tags.push("саморазвитие");
+
+      return tags.slice(0, 4);
+    }
+
+    function isGoodVideo(video) {
+      const text = `${video.title} ${video.description} ${video.channelTitle}`;
+      if (!isRussianText(text)) return false;
+      return calcAiScore(video) >= 18;
+    }
+
+    async function youtubeFetch(url) {
+      const res = await fetch(url);
+      if (!res.ok) {
+        let details = "";
+        try {
+          const data = await res.json();
+          details = data?.error?.message || "";
+        } catch (_) {}
+        throw new Error(`Ошибка API ${res.status}${details ? ": " + details : ""}`);
+      }
+      return res.json();
+    }
+
+    async function searchVideos(query, pageToken = "") {
+      const url =
+        `https://www.googleapis.com/youtube/v3/search?part=snippet` +
+        `&type=video` +
+        `&maxResults=24` +
+        `&order=relevance` +
+        `&q=${encodeURIComponent(query)}` +
+        `&relevanceLanguage=ru` +
+        `&regionCode=RU` +
+        `&safeSearch=moderate` +
+        `&key=${API_KEY}` +
+        (pageToken ? `&pageToken=${pageToken}` : "");
+
+      return youtubeFetch(url);
+    }
+
+    async function getVideoDetails(videoIds) {
+      if (!videoIds.length) return [];
+
+      const url =
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics` +
+        `&id=${videoIds.join(",")}` +
+        `&key=${API_KEY}`;
+
+      const data = await youtubeFetch(url);
+
+      return data.items.map(item => ({
+        id: item.id,
+        title: item.snippet.title,
+        description: item.snippet.description || "",
+        channelTitle: item.snippet.channelTitle,
+        thumbnails: item.snippet.thumbnails,
+        views: item.statistics?.viewCount || 0,
+        url: `https://www.youtube.com/watch?v=${item.id}`
+      }));
+    }
+
+    function updateStatus() {
+      statusPill.textContent = loading ? "Статус: загрузка" : "Статус: готово";
+      countPill.textContent = `Видео: ${allVideos.length}`;
+      queryPill.textContent = `Запрос: ${currentQuery || "—"}`;
+    }
+
+    function renderCard(video) {
+      const card = document.createElement("a");
+      card.className = "card";
+      card.href = video.url;
+      card.target = "_blank";
+      card.rel = "noopener noreferrer";
+
+      const tags = buildTags(video);
+
+      card.innerHTML = `
+        <div class="thumb-wrap">
+          <img class="thumb" src="${thumbUrl(video)}" alt="${video.title}">
+          <div class="youtube-badge">▶ YouTube</div>
+        </div>
+
+        <div class="card-info">
+          <div class="avatar">${getAvatarLetters(video.channelTitle)}</div>
+          <div class="text">
+            <div class="title">${video.title}</div>
+            <div class="meta">
+              ${video.channelTitle}<br>
+              ${formatViews(video.views)}
+            </div>
+            <div class="score">Оценка алгоритма: ${calcAiScore(video)}</div>
+            <div class="tags">
+              ${tags.map(tag => `<span class="tag">${tag}</span>`).join("")}
+            </div>
+          </div>
+        </div>
+      `;
+
+      return card;
+    }
+
+    function renderMoreFromCache() {
+      const nextChunk = allVideos.slice(visibleCount, visibleCount + pageSize);
+      nextChunk.forEach(video => videoGrid.appendChild(renderCard(video)));
+      visibleCount += nextChunk.length;
+
+      if (visibleCount >= allVideos.length && !nextPageToken) {
+        endMessage.classList.remove("hidden");
+      } else {
+        endMessage.classList.add("hidden");
+      }
+    }
+
+    async function fetchAndAppendPage() {
+      if (loading) return;
+      if (!API_KEY || API_KEY === "ВСТАВЬ_СЮДА_НОВЫЙ_YOUTUBE_API_KEY") {
+        throw new Error("Сначала вставь новый YouTube API key в const API_KEY.");
+      }
+
+      loading = true;
+      loader.classList.remove("hidden");
+      errorMessage.classList.add("hidden");
+      updateStatus();
+
+      try {
+        const searchData = await searchVideos(currentQuery, nextPageToken);
+        nextPageToken = searchData.nextPageToken || "";
+
+        const ids = searchData.items
+          .map(item => item.id && item.id.videoId)
+          .filter(Boolean)
+          .filter(id => !seenIds.has(id));
+
+        ids.forEach(id => seenIds.add(id));
+
+        const details = await getVideoDetails(ids);
+        const filtered = details
+          .filter(isGoodVideo)
+          .sort((a, b) => Number(b.views) - Number(a.views));
+
+        allVideos.push(...filtered);
+        updateStatus();
+        renderMoreFromCache();
+
+        if (!nextPageToken && visibleCount >= allVideos.length) {
+          endMessage.classList.remove("hidden");
+        }
+      } finally {
+        loading = false;
+        loader.classList.add("hidden");
+        updateStatus();
+      }
+    }
+
+    async function resetFeed() {
+      currentQuery = pickRandomQuery();
+      nextPageToken = "";
+      allVideos = [];
+      visibleCount = 0;
+      seenIds = new Set();
+      videoGrid.innerHTML = "";
+      endMessage.classList.add("hidden");
+      updateStatus();
+      await fetchAndAppendPage();
+    }
+
+    async function ensureMoreContent() {
+      if (visibleCount < allVideos.length) {
+        renderMoreFromCache();
+        return;
+      }
+
+      if (nextPageToken) {
+        await fetchAndAppendPage();
+      } else {
+        endMessage.classList.remove("hidden");
+      }
+    }
+
+    async function handleInfiniteScroll() {
+      const nearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 900;
+      if (nearBottom && !loading) {
+        try {
+          await ensureMoreContent();
+        } catch (err) {
+          errorMessage.textContent = err.message;
+          errorMessage.classList.remove("hidden");
+        }
+      }
+    }
+
+    refreshBtn.addEventListener("click", async () => {
+      try {
+        await resetFeed();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (err) {
+        errorMessage.textContent = err.message;
+        errorMessage.classList.remove("hidden");
+      }
+    });
+
+    loadMoreBtn.addEventListener("click", async () => {
+      try {
+        await ensureMoreContent();
+      } catch (err) {
+        errorMessage.textContent = err.message;
+        errorMessage.classList.remove("hidden");
+      }
+    });
+
+    window.addEventListener("scroll", handleInfiniteScroll);
+
+    (async function init() {
+      try {
+        await resetFeed();
+      } catch (err) {
+        errorMessage.textContent = err.message;
+        errorMessage.classList.remove("hidden");
+      }
+    })();
+  </script>
+</body>
+</html>
