@@ -122,6 +122,16 @@
       font-size: 12px;
     }
 
+    .duration-badge {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      background: rgba(0, 0, 0, 0.82);
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
     .card-info {
       display: flex;
       gap: 12px;
@@ -223,11 +233,11 @@
     <div class="topbar">
       <div class="brand">
         <h1>SelfDev AI</h1>
-        <div class="subtitle">рекомендации по саморазвитию из YouTube</div>
+        <div class="subtitle">Рекомендации по саморазвитию из YouTube</div>
       </div>
 
       <div class="actions">
-        <button id="refreshBtn">Обновить ленту</button>
+        <button id="refreshBtn">Перемешать ленту</button>
         <button id="loadMoreBtn">Загрузить ещё</button>
       </div>
     </div>
@@ -247,7 +257,6 @@
   </main>
 
   <script>
-    // ВСТАВЬ СЮДА СВОЙ НОВЫЙ API KEY
     const API_KEY = "AIzaSyB7_hzUZycb_u_D0XeeXKU4SvVMcVVodW8";
 
     const SEARCH_TERMS = [
@@ -300,6 +309,7 @@
       "тикток"
     ];
 
+    const STORAGE_KEY = "selfdev_youtube_cache_v1";
     const pageSize = 12;
 
     let allVideos = [];
@@ -318,6 +328,30 @@
     const statusPill = document.getElementById("statusPill");
     const countPill = document.getElementById("countPill");
     const queryPill = document.getElementById("queryPill");
+
+    function loadCache() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveCache(videos) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(videos));
+    }
+
+    function mergeUniqueVideos(oldVideos, newVideos) {
+      const map = new Map();
+
+      [...oldVideos, ...newVideos].forEach(video => {
+        if (!map.has(video.id)) {
+          map.set(video.id, video);
+        }
+      });
+
+      return [...map.values()];
+    }
 
     function shuffle(arr) {
       const copy = [...arr];
@@ -362,6 +396,53 @@
       return !!(match && match.length >= 5);
     }
 
+    function parseISODurationToSeconds(iso) {
+      const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (!match) return 0;
+
+      const hours = Number(match[1] || 0);
+      const minutes = Number(match[2] || 0);
+      const seconds = Number(match[3] || 0);
+
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+
+    function formatDuration(iso) {
+      const total = parseISODurationToSeconds(iso);
+
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = total % 60;
+
+      if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      }
+
+      return `${minutes}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function looksLikeShort(video) {
+      const text = `${video.title} ${video.description}`.toLowerCase();
+      return (
+        text.includes("shorts") ||
+        text.includes("#shorts") ||
+        text.includes("шортс")
+      );
+    }
+
+    function isProbablyVertical(video) {
+      const thumb =
+        video.thumbnails?.maxres ||
+        video.thumbnails?.standard ||
+        video.thumbnails?.high ||
+        video.thumbnails?.medium ||
+        video.thumbnails?.default;
+
+      if (!thumb?.width || !thumb?.height) return false;
+
+      return thumb.height > thumb.width;
+    }
+
     function calcAiScore(video) {
       const text = `${video.title} ${video.description} ${video.channelTitle}`.toLowerCase();
       let score = 0;
@@ -403,20 +484,29 @@
 
     function isGoodVideo(video) {
       const text = `${video.title} ${video.description} ${video.channelTitle}`;
+      const durationSeconds = parseISODurationToSeconds(video.duration);
+
       if (!isRussianText(text)) return false;
+      if (looksLikeShort(video)) return false;
+      if (isProbablyVertical(video)) return false;
+      if (durationSeconds < 300) return false;
+
       return calcAiScore(video) >= 18;
     }
 
     async function youtubeFetch(url) {
       const res = await fetch(url);
+
       if (!res.ok) {
         let details = "";
         try {
           const data = await res.json();
           details = data?.error?.message || "";
         } catch (_) {}
+
         throw new Error(`Ошибка API ${res.status}${details ? ": " + details : ""}`);
       }
+
       return res.json();
     }
 
@@ -426,6 +516,7 @@
         `&type=video` +
         `&maxResults=24` +
         `&order=relevance` +
+        `&videoDuration=medium` +
         `&q=${encodeURIComponent(query)}` +
         `&relevanceLanguage=ru` +
         `&regionCode=RU` +
@@ -440,7 +531,7 @@
       if (!videoIds.length) return [];
 
       const url =
-        `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics` +
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails` +
         `&id=${videoIds.join(",")}` +
         `&key=${API_KEY}`;
 
@@ -453,6 +544,7 @@
         channelTitle: item.snippet.channelTitle,
         thumbnails: item.snippet.thumbnails,
         views: item.statistics?.viewCount || 0,
+        duration: item.contentDetails?.duration || "",
         url: `https://www.youtube.com/watch?v=${item.id}`
       }));
     }
@@ -476,6 +568,7 @@
         <div class="thumb-wrap">
           <img class="thumb" src="${thumbUrl(video)}" alt="${video.title}">
           <div class="youtube-badge">▶ YouTube</div>
+          <div class="duration-badge">${formatDuration(video.duration)}</div>
         </div>
 
         <div class="card-info">
@@ -512,7 +605,7 @@
     async function fetchAndAppendPage() {
       if (loading) return;
       if (!API_KEY || API_KEY === "ВСТАВЬ_СЮДА_НОВЫЙ_YOUTUBE_API_KEY") {
-        throw new Error("Сначала вставь новый YouTube API key в const API_KEY.");
+        throw new Error("Сначала вставь свой YouTube API key в const API_KEY.");
       }
 
       loading = true;
@@ -536,7 +629,9 @@
           .filter(isGoodVideo)
           .sort((a, b) => Number(b.views) - Number(a.views));
 
-        allVideos.push(...filtered);
+        allVideos = mergeUniqueVideos(allVideos, filtered);
+        saveCache(allVideos);
+
         updateStatus();
         renderMoreFromCache();
 
@@ -550,16 +645,30 @@
       }
     }
 
+    function shuffleFeedOnly() {
+      allVideos = shuffle(allVideos);
+      visibleCount = 0;
+      videoGrid.innerHTML = "";
+      endMessage.classList.add("hidden");
+      renderMoreFromCache();
+    }
+
     async function resetFeed() {
       currentQuery = pickRandomQuery();
       nextPageToken = "";
-      allVideos = [];
+      allVideos = loadCache();
+      seenIds = new Set(allVideos.map(v => v.id));
+      allVideos = shuffle(allVideos);
       visibleCount = 0;
-      seenIds = new Set();
       videoGrid.innerHTML = "";
       endMessage.classList.add("hidden");
       updateStatus();
-      await fetchAndAppendPage();
+
+      if (allVideos.length >= 24) {
+        renderMoreFromCache();
+      } else {
+        await fetchAndAppendPage();
+      }
     }
 
     async function ensureMoreContent() {
@@ -570,9 +679,12 @@
 
       if (nextPageToken) {
         await fetchAndAppendPage();
-      } else {
-        endMessage.classList.remove("hidden");
+        return;
       }
+
+      currentQuery = pickRandomQuery();
+      nextPageToken = "";
+      await fetchAndAppendPage();
     }
 
     async function handleInfiniteScroll() {
@@ -589,6 +701,14 @@
 
     refreshBtn.addEventListener("click", async () => {
       try {
+        allVideos = loadCache();
+
+        if (allVideos.length >= 24) {
+          shuffleFeedOnly();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+
         await resetFeed();
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
@@ -618,6 +738,4 @@
     })();
   </script>
 </body>
-
 </html>
-
