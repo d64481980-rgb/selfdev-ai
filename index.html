@@ -27,10 +27,8 @@
 
     .topbar {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
+      flex-direction: column;
+      gap: 14px;
     }
 
     .brand h1 {
@@ -44,10 +42,27 @@
       font-size: 14px;
     }
 
-    .actions {
+    .controls {
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 240px;
+      background: #181818;
+      border: 1px solid #2a2a2a;
+      color: white;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: #3a3a3a;
     }
 
     button {
@@ -55,7 +70,7 @@
       color: white;
       border: none;
       border-radius: 10px;
-      padding: 10px 14px;
+      padding: 12px 14px;
       cursor: pointer;
       font-size: 14px;
     }
@@ -225,6 +240,11 @@
         grid-template-columns: 1fr;
         gap: 20px;
       }
+
+      .controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
     }
   </style>
 </head>
@@ -233,10 +253,17 @@
     <div class="topbar">
       <div class="brand">
         <h1>SelfDev AI</h1>
-        <div class="subtitle">Рекомендации по саморазвитию из YouTube</div>
+        <div class="subtitle">рекомендации по саморазвитию из YouTube</div>
       </div>
 
-      <div class="actions">
+      <div class="controls">
+        <input
+          id="searchInput"
+          class="search-input"
+          type="text"
+          placeholder="Например: книги, психология, дисциплина, привычки"
+        />
+        <button id="searchBtn">Искать</button>
         <button id="refreshBtn">Перемешать ленту</button>
         <button id="loadMoreBtn">Загрузить ещё</button>
       </div>
@@ -259,7 +286,7 @@
   <script>
     const API_KEY = "AIzaSyB7_hzUZycb_u_D0XeeXKU4SvVMcVVodW8";
 
-    const SEARCH_TERMS = [
+    const DEFAULT_SEARCH_TERMS = [
       "саморазвитие",
       "саморазвитие дисциплина",
       "саморазвитие привычки",
@@ -290,7 +317,9 @@
       "прокраст",
       "фокус",
       "цель",
-      "успев"
+      "успев",
+      "книг",
+      "чтени"
     ];
 
     const BAD_WORDS = [
@@ -309,7 +338,7 @@
       "тикток"
     ];
 
-    const STORAGE_KEY = "selfdev_youtube_cache_v1";
+    const STORAGE_KEY = "selfdev_youtube_cache_v2";
     const pageSize = 12;
 
     let allVideos = [];
@@ -318,6 +347,7 @@
     let nextPageToken = "";
     let loading = false;
     let seenIds = new Set();
+    let activeUserTopic = "";
 
     const videoGrid = document.getElementById("videoGrid");
     const loader = document.getElementById("loader");
@@ -325,6 +355,8 @@
     const errorMessage = document.getElementById("errorMessage");
     const refreshBtn = document.getElementById("refreshBtn");
     const loadMoreBtn = document.getElementById("loadMoreBtn");
+    const searchBtn = document.getElementById("searchBtn");
+    const searchInput = document.getElementById("searchInput");
     const statusPill = document.getElementById("statusPill");
     const countPill = document.getElementById("countPill");
     const queryPill = document.getElementById("queryPill");
@@ -362,8 +394,12 @@
       return copy;
     }
 
-    function pickRandomQuery() {
-      return SEARCH_TERMS[Math.floor(Math.random() * SEARCH_TERMS.length)];
+    function buildSearchQuery(userText = "") {
+      const clean = userText.trim();
+      if (!clean) {
+        return DEFAULT_SEARCH_TERMS[Math.floor(Math.random() * DEFAULT_SEARCH_TERMS.length)];
+      }
+      return `саморазвитие ${clean}`;
     }
 
     function formatViews(num) {
@@ -461,6 +497,13 @@
       if (views > 100000) score += 8;
       if (views > 500000) score += 6;
 
+      if (activeUserTopic) {
+        const topicWords = activeUserTopic.toLowerCase().split(" ");
+        topicWords.forEach(word => {
+          if (word && text.includes(word)) score += 14;
+        });
+      }
+
       return score;
     }
 
@@ -476,6 +519,8 @@
       if (text.includes("фокус")) tags.push("фокус");
       if (text.includes("памят")) tags.push("память");
       if (text.includes("тайм")) tags.push("тайм-менеджмент");
+      if (text.includes("книг")) tags.push("книги");
+      if (text.includes("чтен")) tags.push("чтение");
 
       if (!tags.length) tags.push("саморазвитие");
 
@@ -627,7 +672,7 @@
         const details = await getVideoDetails(ids);
         const filtered = details
           .filter(isGoodVideo)
-          .sort((a, b) => Number(b.views) - Number(a.views));
+          .sort((a, b) => calcAiScore(b) - calcAiScore(a));
 
         allVideos = mergeUniqueVideos(allVideos, filtered);
         saveCache(allVideos);
@@ -653,22 +698,36 @@
       renderMoreFromCache();
     }
 
-    async function resetFeed() {
-      currentQuery = pickRandomQuery();
+    async function startNewSearch(userText = "") {
+      activeUserTopic = userText.trim();
+      currentQuery = buildSearchQuery(userText);
       nextPageToken = "";
-      allVideos = loadCache();
-      seenIds = new Set(allVideos.map(v => v.id));
-      allVideos = shuffle(allVideos);
+      allVideos = [];
       visibleCount = 0;
+      seenIds = new Set();
       videoGrid.innerHTML = "";
       endMessage.classList.add("hidden");
+      saveCache([]);
       updateStatus();
+      await fetchAndAppendPage();
+    }
 
-      if (allVideos.length >= 24) {
+    async function resetFeed() {
+      const cached = loadCache();
+
+      if (cached.length > 0 && !activeUserTopic) {
+        allVideos = shuffle(cached);
+        visibleCount = 0;
+        videoGrid.innerHTML = "";
+        seenIds = new Set(allVideos.map(v => v.id));
+        endMessage.classList.add("hidden");
+        currentQuery = currentQuery || buildSearchQuery("");
+        updateStatus();
         renderMoreFromCache();
-      } else {
-        await fetchAndAppendPage();
+        return;
       }
+
+      await startNewSearch(activeUserTopic);
     }
 
     async function ensureMoreContent() {
@@ -682,9 +741,7 @@
         return;
       }
 
-      currentQuery = pickRandomQuery();
-      nextPageToken = "";
-      await fetchAndAppendPage();
+      endMessage.classList.remove("hidden");
     }
 
     async function handleInfiniteScroll() {
@@ -699,17 +756,37 @@
       }
     }
 
+    searchBtn.addEventListener("click", async () => {
+      try {
+        await startNewSearch(searchInput.value);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (err) {
+        errorMessage.textContent = err.message;
+        errorMessage.classList.remove("hidden");
+      }
+    });
+
+    searchInput.addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        try {
+          await startNewSearch(searchInput.value);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch (err) {
+          errorMessage.textContent = err.message;
+          errorMessage.classList.remove("hidden");
+        }
+      }
+    });
+
     refreshBtn.addEventListener("click", async () => {
       try {
-        allVideos = loadCache();
-
-        if (allVideos.length >= 24) {
+        if (allVideos.length >= 12) {
           shuffleFeedOnly();
           window.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
 
-        await resetFeed();
+        await startNewSearch(activeUserTopic);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
         errorMessage.textContent = err.message;
@@ -730,6 +807,7 @@
 
     (async function init() {
       try {
+        currentQuery = buildSearchQuery("");
         await resetFeed();
       } catch (err) {
         errorMessage.textContent = err.message;
