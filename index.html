@@ -49,6 +49,22 @@
       align-items: center;
     }
 
+    .search-input {
+      flex: 1;
+      min-width: 240px;
+      background: #181818;
+      border: 1px solid #2a2a2a;
+      color: white;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: #3a3a3a;
+    }
+
     button {
       background: #272727;
       color: white;
@@ -65,22 +81,6 @@
 
     main {
       padding: 24px;
-    }
-
-    .statusbar {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 18px;
-    }
-
-    .pill {
-      background: #1b1b1b;
-      border: 1px solid #272727;
-      color: #cfcfcf;
-      padding: 8px 12px;
-      border-radius: 999px;
-      font-size: 13px;
     }
 
     .grid {
@@ -224,6 +224,11 @@
         grid-template-columns: 1fr;
         gap: 20px;
       }
+
+      .controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
     }
   </style>
 </head>
@@ -232,10 +237,17 @@
     <div class="topbar">
       <div class="brand">
         <h1>SelfDev AI</h1>
-        <div class="subtitle">Русская лента по саморазвитию, дисциплине, привычкам и тайм-менеджменту</div>
+        <div class="subtitle">Лента по саморазвитию, дисциплине, привычкам и тайм-менеджменту</div>
       </div>
 
       <div class="controls">
+        <input
+          id="searchInput"
+          class="search-input"
+          type="text"
+          placeholder="Ввести"
+        />
+        <button id="searchBtn">Искать</button>
         <button id="refreshBtn">Обновить ленту</button>
         <button id="mixBtn">Перемешать</button>
         <button id="loadMoreBtn">Загрузить ещё</button>
@@ -244,12 +256,6 @@
   </header>
 
   <main>
-    <div class="statusbar">
-      <div class="pill" id="statusPill">Статус: ожидание</div>
-      <div class="pill" id="countPill">Видео: 0</div>
-      <div class="pill" id="queryPill">Темы: смешанные</div>
-    </div>
-
     <section id="videoGrid" class="grid"></section>
     <div id="loader" class="loader hidden">Загружаю видео...</div>
     <div id="endMessage" class="end hidden">Больше результатов пока нет.</div>
@@ -257,9 +263,9 @@
   </main>
 
   <script>
-    const API_KEY = "ВСТАВЬ_СЮДА_НОВЫЙ_YOUTUBE_API_KEY";
+    const API_KEY = "AIzaSyB7_hzUZycb_u_D0XeeXKU4SvVMcVVodW8";
 
-    const SEARCH_TERMS = [
+    const MIXED_SEARCH_TERMS = [
       "саморазвитие",
       "саморазвитие дисциплина",
       "саморазвитие привычки",
@@ -317,7 +323,7 @@
       "тикток"
     ];
 
-    const STORAGE_KEY = "selfdev_youtube_cache_v3";
+    const STORAGE_KEY = "selfdev_youtube_cache_v4";
     const pageSize = 12;
 
     let allVideos = [];
@@ -327,6 +333,7 @@
     let nextPageToken = "";
     let loading = false;
     let seenIds = new Set();
+    let activeUserTopic = "";
 
     const videoGrid = document.getElementById("videoGrid");
     const loader = document.getElementById("loader");
@@ -335,9 +342,8 @@
     const refreshBtn = document.getElementById("refreshBtn");
     const mixBtn = document.getElementById("mixBtn");
     const loadMoreBtn = document.getElementById("loadMoreBtn");
-    const statusPill = document.getElementById("statusPill");
-    const countPill = document.getElementById("countPill");
-    const queryPill = document.getElementById("queryPill");
+    const searchBtn = document.getElementById("searchBtn");
+    const searchInput = document.getElementById("searchInput");
 
     function loadCache() {
       try {
@@ -370,6 +376,12 @@
         [copy[i], copy[j]] = [copy[j], copy[i]];
       }
       return copy;
+    }
+
+    function buildSearchQuery(userText = "") {
+      const clean = userText.trim();
+      if (!clean) return "";
+      return `саморазвитие ${clean}`;
     }
 
     function formatViews(num) {
@@ -467,6 +479,13 @@
       if (views > 100000) score += 8;
       if (views > 500000) score += 6;
 
+      if (activeUserTopic) {
+        const topicWords = activeUserTopic.toLowerCase().split(" ");
+        topicWords.forEach(word => {
+          if (word && text.includes(word)) score += 14;
+        });
+      }
+
       return score;
     }
 
@@ -557,12 +576,6 @@
       }));
     }
 
-    function updateStatus() {
-      statusPill.textContent = loading ? "Статус: загрузка" : "Статус: готово";
-      countPill.textContent = `Видео: ${allVideos.length}`;
-      queryPill.textContent = "Темы: смешанные";
-    }
-
     function renderCard(video) {
       const card = document.createElement("a");
       card.className = "card";
@@ -603,16 +616,16 @@
       nextChunk.forEach(video => videoGrid.appendChild(renderCard(video)));
       visibleCount += nextChunk.length;
 
-      if (visibleCount >= allVideos.length && !nextPageToken && queryQueue.length === 0) {
+      if (visibleCount >= allVideos.length && !nextPageToken && queryQueue.length === 0 && !currentQuery) {
         endMessage.classList.remove("hidden");
       } else {
         endMessage.classList.add("hidden");
       }
     }
 
-    function getNextQuery() {
+    function getNextMixedQuery() {
       if (queryQueue.length === 0) {
-        queryQueue = shuffle([...SEARCH_TERMS]);
+        queryQueue = shuffle([...MIXED_SEARCH_TERMS]);
       }
       return queryQueue.shift();
     }
@@ -627,11 +640,10 @@
       loading = true;
       loader.classList.remove("hidden");
       errorMessage.classList.add("hidden");
-      updateStatus();
 
       try {
         if (!currentQuery) {
-          currentQuery = getNextQuery();
+          currentQuery = activeUserTopic ? buildSearchQuery(activeUserTopic) : getNextMixedQuery();
           nextPageToken = "";
         }
 
@@ -655,18 +667,15 @@
 
         if (!nextPageToken) {
           currentQuery = "";
+          if (activeUserTopic) {
+            endMessage.classList.remove("hidden");
+          }
         }
 
-        updateStatus();
         renderMoreFromCache();
-
-        if (!nextPageToken && queryQueue.length === 0 && visibleCount >= allVideos.length) {
-          endMessage.classList.remove("hidden");
-        }
       } finally {
         loading = false;
         loader.classList.add("hidden");
-        updateStatus();
       }
     }
 
@@ -679,12 +688,15 @@
     }
 
     async function startMixedFeed(clearCache = false) {
+      activeUserTopic = "";
+      searchInput.value = "";
+
       if (clearCache) {
         localStorage.removeItem(STORAGE_KEY);
       }
 
       const cached = loadCache();
-      queryQueue = shuffle([...SEARCH_TERMS]);
+      queryQueue = shuffle([...MIXED_SEARCH_TERMS]);
       currentQuery = "";
       nextPageToken = "";
 
@@ -694,7 +706,6 @@
         seenIds = new Set(allVideos.map(v => v.id));
         videoGrid.innerHTML = "";
         endMessage.classList.add("hidden");
-        updateStatus();
         renderMoreFromCache();
         return;
       }
@@ -704,7 +715,19 @@
       seenIds = new Set(allVideos.map(v => v.id));
       videoGrid.innerHTML = "";
       endMessage.classList.add("hidden");
-      updateStatus();
+
+      await fetchAndAppendPage();
+    }
+
+    async function startTopicSearch(userText) {
+      activeUserTopic = userText.trim();
+      currentQuery = buildSearchQuery(activeUserTopic);
+      nextPageToken = "";
+      allVideos = [];
+      visibleCount = 0;
+      seenIds = new Set();
+      videoGrid.innerHTML = "";
+      endMessage.classList.add("hidden");
 
       await fetchAndAppendPage();
     }
@@ -735,9 +758,50 @@
       }
     }
 
+    searchBtn.addEventListener("click", async () => {
+      try {
+        const value = searchInput.value.trim();
+
+        if (!value) {
+          await startMixedFeed(false);
+        } else {
+          await startTopicSearch(value);
+        }
+
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (err) {
+        errorMessage.textContent = err.message;
+        errorMessage.classList.remove("hidden");
+      }
+    });
+
+    searchInput.addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        try {
+          const value = searchInput.value.trim();
+
+          if (!value) {
+            await startMixedFeed(false);
+          } else {
+            await startTopicSearch(value);
+          }
+
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch (err) {
+          errorMessage.textContent = err.message;
+          errorMessage.classList.remove("hidden");
+        }
+      }
+    });
+
     refreshBtn.addEventListener("click", async () => {
       try {
-        await startMixedFeed(true);
+        if (activeUserTopic) {
+          await startTopicSearch(activeUserTopic);
+        } else {
+          await startMixedFeed(true);
+        }
+
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
         errorMessage.textContent = err.message;
